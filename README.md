@@ -39,8 +39,32 @@ Cloud credentials are resolved by the native SDKs. AWS uses the standard AWS SDK
 
 ## Releases
 
-Terraform/OpenTofu installs providers as released binaries. This repository is tagged with standard SemVer tags such as `v1.0.0`; release builds inject the provider version with `-ldflags "-X main.providerVersion=<version>"` and publish Terraform Registry-compatible zip archives.
+Terraform/OpenTofu installs providers as released binaries. This repository is tagged with standard SemVer tags such as `v0.1.0`; release builds inject the provider version with `-ldflags "-X main.providerVersion=<version>"` and publish Terraform Registry-compatible zip archives.
 
 For Terraform Registry publishing, the GitHub repository must be public and named `terraform-provider-podplane` so the Registry can detect provider `podplane/podplane`.
 
-For local development, build the binary yourself and use Terraform CLI `dev_overrides` for `podplane/podplane`.
+## Local Development
+
+Build the local provider binary:
+
+```sh
+make build
+```
+
+This writes the provider into `bin/`. To make OpenTofu or Terraform use that local binary instead of a published registry version, configure provider development overrides.
+
+Edit OpenTofu `~/.tofurc` or Terraform `~/.terraformrc` with:
+
+```hcl
+provider_installation {
+  dev_overrides {
+    "podplane/podplane" = "$HOME/Workspace/podplane/terraform-provider-podplane/bin"
+  }
+
+  direct {}
+}
+```
+
+The override path is the provider binary directory, not the binary itself. Terraform/OpenTofu will warn that development overrides are active; this is expected.
+
+After configuring the override, run the Podplane CLI or generated Terraform/OpenTofu files normally. Remove the override when testing published provider installs.
