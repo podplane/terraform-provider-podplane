@@ -1,10 +1,27 @@
 # terraform-provider-podplane
 
-Podplane OpenTofu/Terraform provider.
+Podplane OpenTofu/Terraform provider:
 
-This provider creates a Netsy bootstrap snapshot file from a Podplane seed file by using Podplane's `netsyseed` package.
+- creates a Netsy bootstrap snapshot file from a Podplane seed file by using Podplane's `netsyseed` package, which uploads the generated file to S3 or GCS as `bootstrap.netsy` using native cloud SDKs and create-only preconditions, so existing Netsy state and existing bootstrap files are never overwritten.
 
-It uploads the generated file to S3 or GCS as `bootstrap.netsy` using native cloud SDKs and create-only preconditions, so existing Netsy state and existing bootstrap files are never overwritten.
+- renders Podplane VM userdata from pinned vmconfig manifest JSON using the same canonical Go template used for local clusters in the Podplane CLI.
+
+## Data sources
+
+`podplane_userdata` renders auditable userdata during planning without network or filesystem access inside the provider:
+
+```hcl
+data "podplane_userdata" "knc_arm64" {
+  manifest_json                 = file("${path.module}/podplane.cluster.vmconfig.knc.arm64.json")
+  deps_mirror_url               = "https://deps.podplane.dev"
+  provider_kind                 = "aws"
+  aws_account_id                = data.aws_caller_identity.current.account_id
+  immutable_ssh_authorized_keys = var.immutable_ssh_authorized_keys
+  enable_ssm                    = var.enable_ssm
+}
+```
+
+The manifest and rendered content are intentionally retained in Terraform state. Mutable runtime configuration, including `SSH_AUTHORIZED_KEYS`, is not rendered into userdata.
 
 ## Resource contract
 

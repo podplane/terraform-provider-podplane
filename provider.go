@@ -41,7 +41,9 @@ func (p *podplaneProvider) Configure(ctx context.Context, req provider.Configure
 
 // DataSources returns provider data sources.
 func (p *podplaneProvider) DataSources(ctx context.Context) []func() datasource.DataSource {
-	return nil
+	return []func() datasource.DataSource{
+		NewUserdataDataSource,
+	}
 }
 
 // Resources returns provider resources.
