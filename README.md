@@ -47,7 +47,7 @@ The manifest and rendered content are intentionally retained in Terraform state.
 The provider:
 
 - generates snapshots in-process using Podplane's `netsyseed` package
-- resolves `cluster.seed.name`/`version` from the published seeds manifest, unless `seed_path` points to a custom Podplane seed file
+- resolves `cluster.seed.name`/`version` from the published seeds manifest and verifies the file against `cluster.seed.digest`; `seed_path` may point to a custom Podplane seed file
 - merges `values_path` when configured
 - fails if the target prefix already contains Netsy state
 - uploads with S3 `If-None-Match: *` or GCS `DoesNotExist` preconditions so existing Netsy state is never overwritten

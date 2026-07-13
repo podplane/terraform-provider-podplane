@@ -5,8 +5,12 @@
 package main
 
 import (
+	"context"
+	"crypto/sha512"
+	"encoding/hex"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -45,7 +49,7 @@ func TestShouldSeed(t *testing.T) {
 		{name: "omitted seed", seedJSON: ``, want: false},
 		{name: "empty seed", seedJSON: `"seed": {}`, want: false},
 		{name: "none seed", seedJSON: `"seed": {"name":"none"}`, want: false},
-		{name: "recommended seed", seedJSON: `"seed": {"name":"recommended","version":"v1.0.0"}`, want: true},
+		{name: "recommended seed", seedJSON: `"seed": {"name":"recommended","version":"v1.0.0","digest":"sha512:00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"}`, want: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -61,6 +65,31 @@ func TestShouldSeed(t *testing.T) {
 				t.Fatalf("shouldSeed() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+// TestResolveExplicitSeedPath verifies custom local seeds honor the digest
+// pinned in cluster config.
+func TestResolveExplicitSeedPath(t *testing.T) {
+	contents := []byte("custom seed")
+	path := filepath.Join(t.TempDir(), "custom.netsy")
+	if err := os.WriteFile(path, contents, 0o600); err != nil {
+		t.Fatalf("write custom seed: %v", err)
+	}
+	sum := sha512.Sum512(contents)
+	digest := "sha512:" + hex.EncodeToString(sum[:])
+	resolved, cleanup, err := resolveExplicitSeedPath(context.Background(), path, digest)
+	if cleanup != nil {
+		defer cleanup()
+	}
+	if err != nil {
+		t.Fatalf("resolveExplicitSeedPath returned error: %v", err)
+	}
+	if resolved != path {
+		t.Fatalf("resolved path = %q, want %q", resolved, path)
+	}
+	if _, _, err := resolveExplicitSeedPath(context.Background(), path, "sha512:"+strings.Repeat("0", 128)); err == nil {
+		t.Fatal("resolveExplicitSeedPath returned nil for mismatched digest")
 	}
 }
 
