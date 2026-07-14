@@ -22,7 +22,8 @@ type netsySeedGCSModel struct {
 	ID                types.String `tfsdk:"id"`
 	ClusterConfigPath types.String `tfsdk:"cluster_config_path"`
 	SeedPath          types.String `tfsdk:"seed_path"`
-	ValuesPath        types.String `tfsdk:"values_path"`
+	ValuesFile        types.String `tfsdk:"values_file"`
+	ValuesContent     types.String `tfsdk:"values_content"`
 	Bucket            types.String `tfsdk:"bucket"`
 	Prefix            types.String `tfsdk:"prefix"`
 	Project           types.String `tfsdk:"project"`
@@ -55,8 +56,16 @@ func (r *netsySeedGCSResource) Schema(ctx context.Context, req resource.SchemaRe
 					stringplanmodifier.RequiresReplace(),
 				},
 			},
-			"values_path": resourceschema.StringAttribute{
-				Optional: true,
+			"values_file": resourceschema.StringAttribute{
+				Optional:    true,
+				Description: "Path to a user-authored YAML or JSON values file, applied last.",
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+				},
+			},
+			"values_content": resourceschema.StringAttribute{
+				Optional:    true,
+				Description: "Inline YAML or JSON values, applied before values_file.",
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
 				},
@@ -88,6 +97,14 @@ func (r *netsySeedGCSResource) Create(ctx context.Context, req resource.CreateRe
 	var plan netsySeedGCSModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
+		return
+	}
+	if plan.ValuesContent.IsUnknown() {
+		resp.Diagnostics.AddError("Resolve Netsy seed values", "values_content must be known before creating the Netsy seed")
+		return
+	}
+	if plan.ValuesFile.IsUnknown() {
+		resp.Diagnostics.AddError("Resolve Netsy seed values", "values_file must be known before creating the Netsy seed")
 		return
 	}
 	opts := seedOptionsFromGCSModel(plan)
@@ -160,7 +177,8 @@ func seedOptionsFromGCSModel(model netsySeedGCSModel) SeedOptions {
 	return SeedOptions{
 		ClusterConfigPath: stringOr(model.ClusterConfigPath, ""),
 		SeedPath:          stringOr(model.SeedPath, ""),
-		ValuesPath:        stringOr(model.ValuesPath, ""),
+		ValuesFile:        stringOr(model.ValuesFile, ""),
+		ValuesContent:     stringOr(model.ValuesContent, ""),
 		Bucket:            stringOr(model.Bucket, ""),
 		Prefix:            stringOr(model.Prefix, ""),
 		Project:           stringOr(model.Project, ""),

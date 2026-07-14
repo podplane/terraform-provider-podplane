@@ -23,7 +23,8 @@ const netsyBootstrapObject = "bootstrap.netsy"
 type SeedOptions struct {
 	ClusterConfigPath string
 	SeedPath          string
-	ValuesPath        string
+	ValuesFile        string
+	ValuesContent     string
 	Bucket            string
 	Prefix            string
 	Region            string
@@ -144,7 +145,8 @@ func generateNetsySeedSnapshot(ctx context.Context, opts SeedOptions, seedPath s
 		Context:           ctx,
 		ClusterConfigPath: opts.ClusterConfigPath,
 		SeedPath:          seedPath,
-		ValuesFile:        opts.ValuesPath,
+		ValuesContent:     []byte(opts.ValuesContent),
+		ValuesFile:        opts.ValuesFile,
 	}); err != nil {
 		cleanup()
 		return "", nil, err

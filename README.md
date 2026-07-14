@@ -29,7 +29,8 @@ The manifest and rendered content are intentionally retained in Terraform state.
 
 - `cluster_config_path`
 - `seed_path`
-- `values_path`
+- `values_content` (optional inline YAML or JSON)
+- `values_file` (optional user-authored YAML or JSON file)
 - `bucket`
 - `prefix` (optional)
 - `region`
@@ -39,7 +40,8 @@ The manifest and rendered content are intentionally retained in Terraform state.
 
 - `cluster_config_path`
 - `seed_path`
-- `values_path`
+- `values_content` (optional inline YAML or JSON)
+- `values_file` (optional user-authored YAML or JSON file)
 - `bucket`
 - `prefix` (optional)
 - `project`
@@ -48,9 +50,11 @@ The provider:
 
 - generates snapshots in-process using Podplane's `netsyseed` package
 - resolves `cluster.seed.name`/`version` from the published seeds manifest and verifies the file against `cluster.seed.digest`; `seed_path` may point to a custom Podplane seed file
-- merges `values_path` when configured
+- merges values with precedence: provider-derived defaults < `values_content` < `values_file`
 - fails if the target prefix already contains Netsy state
 - uploads with S3 `If-None-Match: *` or GCS `DoesNotExist` preconditions so existing Netsy state is never overwritten
+
+Seed resources create the initial state for a new cluster. After Netsy has been initialized, changing a seed setting will not overwrite its existing data. To reconfigure components in a running cluster, update their live values instead.
 
 Cloud credentials are resolved by the native SDKs. AWS uses the standard AWS SDK chain, optionally scoped by `region` and `profile`. GCS uses Application Default Credentials, optionally scoped by `project` for quota/billing.
 

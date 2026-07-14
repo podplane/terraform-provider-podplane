@@ -17,11 +17,17 @@ func TestNetsySeedS3Schema(t *testing.T) {
 	schema := resourceSchema(t, &netsySeedS3Resource{})
 	assertStringAttribute(t, schema, "cluster_config_path", true, false)
 	assertStringAttribute(t, schema, "seed_path", false, true)
-	assertStringAttribute(t, schema, "values_path", false, true)
+	assertStringAttribute(t, schema, "values_file", false, true)
+	assertStringAttribute(t, schema, "values_content", false, true)
 	assertStringAttribute(t, schema, "bucket", true, false)
 	assertStringAttribute(t, schema, "prefix", false, true)
 	assertStringAttribute(t, schema, "region", false, true)
 	assertStringAttribute(t, schema, "profile", false, true)
+	for _, name := range []string{"values", "values_path", "generated_values", "route53_role_arn", "route53_hosted_zones"} {
+		if _, ok := schema.Attributes[name]; ok {
+			t.Fatalf("schema unexpectedly contains %q", name)
+		}
+	}
 	if _, ok := schema.Attributes["key"]; ok {
 		t.Fatalf("schema unexpectedly contains legacy key attribute")
 	}
@@ -32,10 +38,16 @@ func TestNetsySeedGCSSchema(t *testing.T) {
 	schema := resourceSchema(t, &netsySeedGCSResource{})
 	assertStringAttribute(t, schema, "cluster_config_path", true, false)
 	assertStringAttribute(t, schema, "seed_path", false, true)
-	assertStringAttribute(t, schema, "values_path", false, true)
+	assertStringAttribute(t, schema, "values_file", false, true)
+	assertStringAttribute(t, schema, "values_content", false, true)
 	assertStringAttribute(t, schema, "bucket", true, false)
 	assertStringAttribute(t, schema, "prefix", false, true)
 	assertStringAttribute(t, schema, "project", false, true)
+	for _, name := range []string{"values", "values_path", "generated_values", "route53_role_arn", "route53_hosted_zones"} {
+		if _, ok := schema.Attributes[name]; ok {
+			t.Fatalf("schema unexpectedly contains %q", name)
+		}
+	}
 	if _, ok := schema.Attributes["key"]; ok {
 		t.Fatalf("schema unexpectedly contains legacy key attribute")
 	}
