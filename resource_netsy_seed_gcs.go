@@ -140,7 +140,6 @@ func (r *netsySeedGCSResource) Create(ctx context.Context, req resource.CreateRe
 		}
 	}
 	plan.ID = types.StringValue("gs://" + opts.Bucket + "/" + opts.objectKey())
-	plan.Prefix = types.StringValue(opts.Prefix)
 	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
@@ -163,7 +162,6 @@ func (r *netsySeedGCSResource) Update(ctx context.Context, req resource.UpdateRe
 	}
 	opts := seedOptionsFromGCSModel(plan)
 	plan.ID = types.StringValue("gs://" + opts.Bucket + "/" + opts.objectKey())
-	plan.Prefix = types.StringValue(opts.Prefix)
 	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 

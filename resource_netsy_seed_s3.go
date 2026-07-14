@@ -147,7 +147,6 @@ func (r *netsySeedS3Resource) Create(ctx context.Context, req resource.CreateReq
 		}
 	}
 	plan.ID = types.StringValue("s3://" + opts.Bucket + "/" + opts.objectKey())
-	plan.Prefix = types.StringValue(opts.Prefix)
 	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
@@ -170,7 +169,6 @@ func (r *netsySeedS3Resource) Update(ctx context.Context, req resource.UpdateReq
 	}
 	opts := seedOptionsFromS3Model(plan)
 	plan.ID = types.StringValue("s3://" + opts.Bucket + "/" + opts.objectKey())
-	plan.Prefix = types.StringValue(opts.Prefix)
 	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
