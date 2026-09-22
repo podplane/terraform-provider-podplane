@@ -6,6 +6,8 @@ Podplane OpenTofu/Terraform provider:
 
 - renders Podplane VM userdata from pinned vmconfig manifest JSON using the same canonical Go template used for local clusters in the Podplane CLI.
 
+- creates or adopts the dedicated workload CA key through a state-safe resource that never places private key bytes in configuration or state.
+
 ## Data sources
 
 `podplane_userdata` renders auditable userdata during planning without network or filesystem access inside the provider:
@@ -24,6 +26,26 @@ data "podplane_userdata" "knc_arm64" {
 The manifest and rendered content are intentionally retained in Terraform state. Mutable runtime configuration, including `SSH_AUTHORIZED_KEYS`, is not rendered into userdata.
 
 ## Resource contract
+
+### Workload CA Key
+
+`podplane_workload_ca_key` creates or adopts exactly one unencrypted PKCS#8 Ed25519 key at the canonical name derived from `provider` and `key_prefix`:
+
+- `aws_secrets_manager`: `/<key_prefix>/workload-ca-key`
+- `aws_ssm`: `/<key_prefix>/workload-ca-key` as a `SecureString`
+- `gcp_secret_manager`: `<key_prefix>_workload-ca-key` in `project`
+
+For AWS, `region` and `profile` can select the SDK configuration to use. For Google Cloud, `project` identifies the project in which the secret is stored.
+
+The resource is designed to keep the private key out of Terraform state. It generates the key inside the provider and writes it directly to the selected secret backend. Terraform records only enough information to recognize the key later: its backend location, backend version, and public-key fingerprint.
+
+The workload CA key is a long-lived cluster identity, so the provider will not silently replace or rotate it. During creation it uses the backend's create-only operation. If another provisioning process created the same key first, the provider adopts that key after checking that it is a valid Ed25519 private key. On later refreshes, it reads only secret metadata and reports an error if the key has disappeared or its current version has changed. Recover the original version instead of recreating the resource when this happens.
+
+Changing any resource argument requires replacement, but automatic key replacement is intentionally unsupported. Import is also unsupported. Removing the resource from configuration removes it from Terraform state without deleting the key from the secret backend; retiring or rotating a workload CA must be an explicit operational procedure.
+
+Google Secret Manager creates a secret and its first version in two separate operations. If provisioning is interrupted between them, an empty secret can remain. The provider will not add a key to that existing empty secret because another provisioning process could still be using it. Confirm that no other provisioning process is active, delete the empty secret manually, and apply again.
+
+### Netsy seed
 
 `podplane_netsy_seed_s3`:
 

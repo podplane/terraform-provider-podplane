@@ -51,5 +51,6 @@ func (p *podplaneProvider) Resources(ctx context.Context) []func() resource.Reso
 	return []func() resource.Resource{
 		NewNetsySeedS3Resource,
 		NewNetsySeedGCSResource,
+		NewWorkloadCAKeyResource,
 	}
 }
