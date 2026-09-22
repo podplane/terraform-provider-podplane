@@ -1,5 +1,5 @@
 // Podplane <https://podplane.dev>
-// Copyright 2026 Nadrama Pty Ltd
+// Copyright The Podplane Authors
 // SPDX-License-Identifier: Apache-2.0
 
 package main
@@ -16,8 +16,10 @@ import (
 
 var _ datasource.DataSource = (*userdataDataSource)(nil)
 
+// userdataDataSource renders Podplane VM userdata.
 type userdataDataSource struct{}
 
+// userdataModel maps userdata arguments and results to Terraform state.
 type userdataModel struct {
 	ManifestJSON               types.String `tfsdk:"manifest_json"`
 	DepsMirrorURL              types.String `tfsdk:"deps_mirror_url"`

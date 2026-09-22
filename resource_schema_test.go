@@ -1,5 +1,5 @@
 // Podplane <https://podplane.dev>
-// Copyright 2026 Nadrama Pty Ltd
+// Copyright The Podplane Authors
 // SPDX-License-Identifier: Apache-2.0
 
 package main
@@ -53,6 +53,7 @@ func TestNetsySeedGCSSchema(t *testing.T) {
 	}
 }
 
+// schemaResource is the subset of a resource needed by schema tests.
 type schemaResource interface {
 	Schema(context.Context, resource.SchemaRequest, *resource.SchemaResponse)
 }

@@ -1,5 +1,5 @@
 // Podplane <https://podplane.dev>
-// Copyright 2026 Nadrama Pty Ltd
+// Copyright The Podplane Authors
 // SPDX-License-Identifier: Apache-2.0
 
 package main
@@ -16,8 +16,10 @@ import (
 
 var _ resource.Resource = (*netsySeedGCSResource)(nil)
 
+// netsySeedGCSResource creates an initial Netsy snapshot in Google Cloud Storage.
 type netsySeedGCSResource struct{}
 
+// netsySeedGCSModel maps Google Cloud Storage seed arguments and results to Terraform state.
 type netsySeedGCSModel struct {
 	ID                types.String `tfsdk:"id"`
 	ClusterConfigPath types.String `tfsdk:"cluster_config_path"`

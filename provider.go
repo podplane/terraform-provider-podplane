@@ -1,5 +1,5 @@
 // Podplane <https://podplane.dev>
-// Copyright 2026 Nadrama Pty Ltd
+// Copyright The Podplane Authors
 // SPDX-License-Identifier: Apache-2.0
 
 package main
@@ -17,6 +17,7 @@ var providerVersion = "dev"
 
 var _ provider.Provider = (*podplaneProvider)(nil)
 
+// podplaneProvider implements the Podplane provider.
 type podplaneProvider struct{}
 
 // NewProvider returns a Podplane Terraform provider instance.

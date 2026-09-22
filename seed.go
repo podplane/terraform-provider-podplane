@@ -1,5 +1,5 @@
 // Podplane <https://podplane.dev>
-// Copyright 2026 Nadrama Pty Ltd
+// Copyright The Podplane Authors
 // SPDX-License-Identifier: Apache-2.0
 
 package main
@@ -20,6 +20,7 @@ import (
 
 const netsyBootstrapObject = "bootstrap.netsy"
 
+// SeedOptions contains the inputs used to create and upload a Netsy seed snapshot.
 type SeedOptions struct {
 	ClusterConfigPath string
 	SeedPath          string

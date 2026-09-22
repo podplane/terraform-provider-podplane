@@ -1,5 +1,5 @@
 // Podplane <https://podplane.dev>
-// Copyright 2026 Nadrama Pty Ltd
+// Copyright The Podplane Authors
 // SPDX-License-Identifier: Apache-2.0
 
 package main
@@ -16,8 +16,10 @@ import (
 
 var _ resource.Resource = (*netsySeedS3Resource)(nil)
 
+// netsySeedS3Resource creates an initial Netsy snapshot in Amazon S3.
 type netsySeedS3Resource struct{}
 
+// netsySeedS3Model maps S3 seed arguments and results to Terraform state.
 type netsySeedS3Model struct {
 	ID                types.String `tfsdk:"id"`
 	ClusterConfigPath types.String `tfsdk:"cluster_config_path"`
