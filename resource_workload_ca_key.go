@@ -99,11 +99,11 @@ func (r *workloadCAKeyResource) ValidateConfig(ctx context.Context, req resource
 		resp.Diagnostics.AddError("Invalid workload CA key configuration", err.Error())
 		return
 	}
-	if opts.Provider == cloudSecretProviderGCPSecretManager && (opts.Region != "" || opts.Profile != "") {
-		resp.Diagnostics.AddError("Invalid GCP workload CA key configuration", "region and profile are only valid for AWS providers")
+	if opts.Provider != cloudSecretProviderAWSSecretsManager && opts.Provider != cloudSecretProviderAWSSSM && (opts.Region != "" || opts.Profile != "") {
+		resp.Diagnostics.AddError("Invalid workload CA key configuration", "region and profile are only valid for AWS providers")
 	}
 	if opts.Provider != cloudSecretProviderGCPSecretManager && opts.Project != "" {
-		resp.Diagnostics.AddError("Invalid AWS workload CA key configuration", "project is only valid for gcp_secret_manager")
+		resp.Diagnostics.AddError("Invalid workload CA key configuration", "project is only valid for gcp_secret_manager")
 	}
 }
 

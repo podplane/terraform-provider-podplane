@@ -31,7 +31,7 @@ const (
 	cloudSecretProviderGCPSecretManager  = "gcp_secret_manager"
 )
 
-// cloudSecretOptions identifies a secret in a supported cloud backend.
+// cloudSecretOptions identifies a secret in a supported durable backend.
 type cloudSecretOptions struct {
 	Provider  string
 	Name      string
@@ -61,17 +61,17 @@ type cloudSecretMetadata struct {
 	Version  string
 }
 
-// cloudSecretStore creates a secret once and reads its current metadata.
+// cloudSecretStore creates a durable secret once and reads its current metadata.
 type cloudSecretStore interface {
 	CreateOrAdopt(context.Context, []byte) (cloudSecretMetadata, []byte, error)
 	Metadata(context.Context) (cloudSecretMetadata, error)
 	Close() error
 }
 
-// newCloudSecretStore configures the selected cloud secret backend.
+// newCloudSecretStore configures the selected secret backend.
 func newCloudSecretStore(ctx context.Context, opts cloudSecretOptions) (cloudSecretStore, error) {
 	if opts.Name == "" {
-		return nil, errors.New("cloud secret name is required")
+		return nil, errors.New("secret name is required")
 	}
 	identity := opts.Identity()
 	switch opts.Provider {

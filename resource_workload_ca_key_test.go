@@ -16,7 +16,7 @@ func TestWorkloadCAKeySchemaContainsMetadataOnly(t *testing.T) {
 	for _, name := range []string{"region", "profile", "project"} {
 		assertStringAttribute(t, schema, name, false, true)
 	}
-	for _, forbidden := range []string{"value", "private_key", "private_key_pem", "secret", "secret_value"} {
+	for _, forbidden := range []string{"value", "private_key", "private_key_pem", "secret", "secret_value", "token", "vault_token", "bao_token"} {
 		if _, ok := schema.Attributes[forbidden]; ok {
 			t.Fatalf("schema exposes forbidden key attribute %q", forbidden)
 		}

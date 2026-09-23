@@ -35,7 +35,7 @@ The manifest and rendered content are intentionally retained in Terraform state.
 - `aws_ssm`: `/<key_prefix>/workload-ca-key` as a `SecureString`
 - `gcp_secret_manager`: `<key_prefix>_workload-ca-key` in `project`
 
-For AWS, `region` and `profile` can select the SDK configuration to use. For Google Cloud, `project` identifies the project in which the secret is stored.
+For AWS, `region` and `profile` can select the SDK configuration to use. For Google Cloud, `project` identifies the project in which the secret is stored. Externally administered Vault and OpenBao installations are outside this resource's scope; customers provision their workload CA key before creating the cluster.
 
 The resource is designed to keep the private key out of Terraform state. It generates the key inside the provider and writes it directly to the selected secret backend. Terraform records only enough information to recognize the key later: its backend location, backend version, and public-key fingerprint.
 
