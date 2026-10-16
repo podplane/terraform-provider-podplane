@@ -99,7 +99,7 @@ The provider:
 - generates snapshots in-process using Podplane's `netsyseed` package
 - resolves `cluster.seed.name`/`version` from the published seeds manifest and verifies the file against `cluster.seed.digest`; `seed_path` may point to a custom Podplane seed file
 - merges values with precedence: provider-derived defaults < `values_content` < `values_file`
-- adopts a completed bootstrap with matching non-secret input identity before accessing keys or minting credentials; otherwise fails if the target prefix already contains Netsy state
+- adopts a completed bootstrap with matching non-secret input identity before accessing keys or generating credentials; otherwise fails if the target prefix already contains Netsy state
 - uploads with S3 `If-None-Match: *` or GCS `DoesNotExist` preconditions so existing Netsy state is never overwritten
 - requests S3 AES-256 server-side encryption; GCS uses its built-in encryption at rest (including bucket-default CMEK)
 - records only the S3 object version/ETag or GCS generation in `object_version`; refresh reads metadata, not snapshot payloads or keys, and reports loss/version changes without triggering repair

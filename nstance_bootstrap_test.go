@@ -472,13 +472,6 @@ func TestSeedBootstrapCloudCreateAndRecovery(t *testing.T) {
 			if _, err := nonce.Validate(token, parsed.(ed25519.PrivateKey).Public().(ed25519.PublicKey), "agent"); err == nil {
 				t.Fatal("operator nonce accepted as agent credential")
 			}
-			expired, err := mintOperatorNonce(value, opts.NstanceBootstrap, time.Now().Add(-31*time.Minute))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err := nonce.Validate(expired, parsed.(ed25519.PrivateKey).Public().(ed25519.PublicKey), "operator"); err == nil {
-				t.Fatal("expired operator nonce was accepted")
-			}
 			if _, ok := values["/registry/namespaces/platform-nstance"]; !ok {
 				t.Fatal("missing operator namespace")
 			}

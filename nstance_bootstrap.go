@@ -7,8 +7,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"crypto/ed25519"
-	"crypto/rand"
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/hex"
@@ -21,7 +19,6 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/golang-jwt/jwt/v5"
 	resourceschema "github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/objectplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
@@ -62,7 +59,7 @@ func nstanceBootstrapAttribute() resourceschema.SingleNestedAttribute {
 	return resourceschema.SingleNestedAttribute{
 		Optional:      true,
 		PlanModifiers: []planmodifier.Object{objectplanmodifier.RequiresReplace()},
-		Description:   "Non-secret Nstance v2 operator bootstrap references. Omit when the AWS/Google recommended-provider overlay is disabled. Credentials are minted only during Create and inserted directly into the snapshot, never Helm values.",
+		Description:   "Non-secret Nstance v2 operator bootstrap references. Omit when the AWS/Google recommended-provider overlay is disabled. Credentials are generated only during Create and inserted directly into the snapshot, never Helm values.",
 		Attributes: map[string]resourceschema.Attribute{
 			"provider":                resourceschema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString(cloudSecretProviderAWSSSM), PlanModifiers: replace},
 			"secret_prefix":           required,
@@ -138,35 +135,6 @@ func validateBootstrapScope(opts SeedOptions) error {
 		}
 	}
 	return errors.New("operator bootstrap requires an AWS or Google Cloud provider")
-}
-
-// mintOperatorNonce uses Nstance's public signing contract; it never registers an operator.
-func mintOperatorNonce(value []byte, b *nstanceBootstrapModel, now time.Time) (string, error) {
-	block, rest := pem.Decode(value)
-	if block == nil || block.Type != "PRIVATE KEY" || len(rest) != 0 {
-		return "", errors.New("invalid PKCS#8 signing key")
-	}
-	defer clear(block.Bytes)
-	parsed, err := x509.ParsePKCS8PrivateKey(block.Bytes)
-	if err != nil {
-		return "", errors.New("invalid PKCS#8 signing key")
-	}
-	key, ok := parsed.(ed25519.PrivateKey)
-	if !ok {
-		return "", errors.New("signing key is not Ed25519")
-	}
-	defer clear(key)
-	var id [32]byte
-	if _, err := rand.Read(id[:]); err != nil {
-		return "", errors.New("cannot generate registration nonce ID")
-	}
-	return nonce.Sign(key, nonce.Claims{
-		RegisteredClaims: jwt.RegisteredClaims{
-			Issuer: "nstance-server", Subject: b.ClusterID.ValueString(), ID: hex.EncodeToString(id[:]),
-			IssuedAt: jwt.NewNumericDate(now), NotBefore: jwt.NewNumericDate(now), ExpiresAt: jwt.NewNumericDate(now.Add(operatorNonceTTL)),
-		},
-		Kind: "operator", ClusterID: b.ClusterID.ValueString(), Tenant: b.Tenant.ValueString(),
-	})
 }
 
 // addOperatorBootstrap inserts ordinary Kubernetes JSON records. Netsy receives
@@ -308,7 +276,8 @@ func waitPublicCA(ctx context.Context, read func(context.Context) ([]byte, error
 				return nil, errors.New("public Nstance ca.crt must contain one PEM CA certificate")
 			}
 			cert, err := x509.ParseCertificate(block.Bytes)
-			if err != nil || !cert.IsCA || time.Now().Before(cert.NotBefore) || time.Now().After(cert.NotAfter) {
+			now := time.Now()
+			if err != nil || !cert.IsCA || now.Before(cert.NotBefore) || now.After(cert.NotAfter) {
 				return nil, errors.New("public Nstance ca.crt is not a valid current CA certificate")
 			}
 			return ca, nil
@@ -386,13 +355,13 @@ func createSeed(ctx context.Context, opts SeedOptions, store seedSnapshotStore, 
 			return meta, err
 		}
 		defer clear(key)
-		fingerprint, err := nstanceKeyFingerprint(key)
+		fingerprint, err := nonce.FingerprintSigningKey(key)
 		if err != nil || fingerprint != b.SigningKeyFingerprint.ValueString() {
 			return meta, errors.New("recorded Nstance signing-key fingerprint mismatch; restore the original key")
 		}
-		token, err := mintOperatorNonce(key, b, time.Now())
+		token, err := nonce.GenerateOperatorToken(key, b.ClusterID.ValueString(), b.Tenant.ValueString(), operatorNonceTTL)
 		if err != nil {
-			return meta, errors.New("cannot mint Nstance operator registration nonce")
+			return meta, errors.New("cannot generate Nstance operator registration nonce")
 		}
 		injected, err := addOperatorBootstrap(snapshot, b, ca, token)
 		if err != nil {

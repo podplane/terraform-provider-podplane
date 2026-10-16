@@ -6,7 +6,6 @@ package main
 
 import (
 	"context"
-	"encoding/pem"
 	"fmt"
 	"strings"
 
@@ -16,6 +15,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/nstance-dev/nstance/v2/pkg/nonce"
 )
 
 // nstanceRegistrationKeyResource retains Nstance's long-lived nonce signer.
@@ -139,7 +139,7 @@ func (*nstanceRegistrationKeyResource) Create(ctx context.Context, req resource.
 
 // createNstanceSigningKey creates or adopts a PKCS#8 Ed25519 key and fingerprints its public key.
 func createNstanceSigningKey(ctx context.Context, store cloudSecretStore) (cloudSecretMetadata, string, error) {
-	generated, err := generateWorkloadCAKey()
+	generated, err := nonce.GenerateSigningKey()
 	if err != nil {
 		return cloudSecretMetadata{}, "", fmt.Errorf("cannot generate Ed25519 signing key")
 	}
@@ -149,25 +149,11 @@ func createNstanceSigningKey(ctx context.Context, store cloudSecretStore) (cloud
 	if err != nil {
 		return cloudSecretMetadata{}, "", fmt.Errorf("cannot create or adopt signing key; check backend permissions and availability; an existing empty Google secret must be resolved manually, never populated or rotated automatically")
 	}
-	fingerprint, err := nstanceKeyFingerprint(winner)
+	fingerprint, err := nonce.FingerprintSigningKey(winner)
 	if err != nil {
 		return cloudSecretMetadata{}, "", fmt.Errorf("existing signing key is not a PKCS#8 Ed25519 private key; restore the original key instead of replacing it")
 	}
 	return meta, fingerprint, nil
-}
-
-// nstanceKeyFingerprint validates and fingerprints a key using Nstance's strict PEM contract.
-// Nstance requires no trailing data, including whitespace, after its PEM block.
-func nstanceKeyFingerprint(value []byte) (string, error) {
-	block, rest := pem.Decode(value)
-	if block == nil {
-		return "", fmt.Errorf("invalid Nstance signing-key PEM")
-	}
-	clear(block.Bytes)
-	if len(rest) != 0 {
-		return "", fmt.Errorf("unexpected trailing data in Nstance signing-key PEM")
-	}
-	return workloadCAKeyFingerprint(value)
 }
 
 // Read verifies the recorded signing-key identity and version without reading its value.

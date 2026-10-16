@@ -11,10 +11,9 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.41.0
 	github.com/aws/aws-sdk-go-v2/service/ssm v1.68.1
 	github.com/aws/smithy-go v1.24.2
-	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/hashicorp/terraform-plugin-framework v1.4.2
 	github.com/netsy-dev/netsy v1.1.1
-	github.com/nstance-dev/nstance/v2 v2.2.0
+	github.com/nstance-dev/nstance/v2 v2.3.0
 	github.com/tailscale/hujson v0.0.0-20260302212456-ecc657c15afd
 	google.golang.org/api v0.264.0
 )
@@ -30,6 +29,7 @@ require (
 	github.com/go-git/go-billy/v6 v6.0.0-alpha.1 // indirect
 	github.com/go-git/go-git/v6 v6.0.0-alpha.4 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
+	github.com/golang-jwt/jwt/v5 v5.3.0 // indirect
 	github.com/google/go-containerregistry v0.21.7 // indirect
 	github.com/kevinburke/ssh_config v1.6.0 // indirect
 	github.com/klauspost/compress v1.18.6 // indirect

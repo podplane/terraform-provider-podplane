@@ -191,8 +191,8 @@ github.com/mitchellh/go-testing-interface v1.14.1 h1:jrgshOhYAUVNMAJiKbEu7EqAwgJ
 github.com/mitchellh/go-testing-interface v1.14.1/go.mod h1:gfgS7OtZj6MA4U1UrDRp04twqAjfvlZyCfX3sDjEym8=
 github.com/netsy-dev/netsy v1.1.1 h1:W80yfsEeMBMhzTIK00WoG7e9Vn3HRmO0KuHQ4K/sMmU=
 github.com/netsy-dev/netsy v1.1.1/go.mod h1:9YQxjcbWk3/Ag0MYby9gI3nUtPh0xwC9xp4BTBT9nHE=
-github.com/nstance-dev/nstance/v2 v2.2.0 h1:bJGD4b3acvLRBbR/x1aN1apVIDm1ekpDJHuX5H8t6UA=
-github.com/nstance-dev/nstance/v2 v2.2.0/go.mod h1:FCTzisxq8PVbdu3hAb336MylvdA5Ea9Esgxn4Y4oq8I=
+github.com/nstance-dev/nstance/v2 v2.3.0 h1:Csa4yKZDZFqRK5FSej/49KiHkE7xRWp0XtFlte/+vG4=
+github.com/nstance-dev/nstance/v2 v2.3.0/go.mod h1:FCTzisxq8PVbdu3hAb336MylvdA5Ea9Esgxn4Y4oq8I=
 github.com/oklog/run v1.0.0 h1:Ru7dDtJNOyC66gQ5dQmaCa0qIsAUFY3sFpK1Xk8igrw=
 github.com/oklog/run v1.0.0/go.mod h1:dlhp/R75TPv97u0XWUtDeV/lRKWPKSdTuV0TZvrmrQA=
 github.com/opencontainers/go-digest v1.0.0 h1:apOUWs51W5PlhuyGyz9FCeeBIOUDA/6nW8Oi/yOhh5U=
