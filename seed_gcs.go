@@ -5,65 +5,73 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
-	"os"
+	"path"
+	"strconv"
+	"strings"
 
 	"cloud.google.com/go/storage"
-	"google.golang.org/api/googleapi"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 )
 
-// uploadSnapshotGCS uploads the snapshot to GCS only when the bucket is empty
-// and the object name does not exist.
-func uploadSnapshotGCS(ctx context.Context, opts SeedOptions, path string) error {
-	if opts.Bucket == "" {
-		return fmt.Errorf("bucket is required")
-	}
-	key := opts.objectKey()
-	client, err := newGCSClient(ctx, opts)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = client.Close() }()
-	if err := requireEmptyGCSPrefix(ctx, client, opts.Bucket, opts.objectPrefix()); err != nil {
-		return err
-	}
-	file, err := os.Open(path)
-	if err != nil {
-		return fmt.Errorf("open Netsy snapshot %s: %w", path, err)
-	}
-	defer func() { _ = file.Close() }()
-	obj := client.Bucket(opts.Bucket).Object(key).If(storage.Conditions{DoesNotExist: true})
-	w := obj.NewWriter(ctx)
-	if _, err := io.Copy(w, file); err != nil {
-		_ = w.Close()
-		return fmt.Errorf("upload Netsy snapshot to gs://%s/%s: %w", opts.Bucket, key, err)
-	}
-	if err := w.Close(); err != nil {
-		var apiErr *googleapi.Error
-		if errors.As(err, &apiErr) && apiErr.Code == 412 {
-			return fmt.Errorf("GCS object gs://%s/%s already exists; refusing to overwrite Netsy state", opts.Bucket, key)
-		}
-		return fmt.Errorf("upload Netsy snapshot to gs://%s/%s: %w", opts.Bucket, key, err)
-	}
-	return nil
+// gcsSeedStore manages create-only Netsy snapshots and public CA reads in GCS.
+type gcsSeedStore struct {
+	client *storage.Client
+	opts   SeedOptions
 }
 
-// checkSnapshotTargetGCS checks that the target GCS prefix has no existing objects.
-func checkSnapshotTargetGCS(ctx context.Context, opts SeedOptions) error {
-	if opts.Bucket == "" {
-		return fmt.Errorf("bucket is required")
+// Metadata reads the snapshot generation and completion marker without its payload.
+func (s *gcsSeedStore) Metadata(ctx context.Context) (seedSnapshotMetadata, error) {
+	attrs, err := s.client.Bucket(s.opts.Bucket).Object(s.opts.objectKey()).Attrs(ctx)
+	if errors.Is(err, storage.ErrObjectNotExist) {
+		return seedSnapshotMetadata{}, errSnapshotAbsent
 	}
-	client, err := newGCSClient(ctx, opts)
 	if err != nil {
-		return err
+		return seedSnapshotMetadata{}, errors.New("cannot read GCS seed metadata")
 	}
-	defer func() { _ = client.Close() }()
-	return requireEmptyGCSPrefix(ctx, client, opts.Bucket, opts.objectPrefix())
+	// All GCS objects are encrypted at rest, including provider-managed keys.
+	return seedSnapshotMetadata{Version: strconv.FormatInt(attrs.Generation, 10), Completion: attrs.Metadata[seedCompletionMetadata], Encrypted: true}, nil
+}
+
+// RequireEmpty rejects a seed prefix that already contains objects.
+func (s *gcsSeedStore) RequireEmpty(ctx context.Context) error {
+	return requireEmptyGCSPrefix(ctx, s.client, s.opts.Bucket, s.opts.objectPrefix())
+}
+
+// PublicCA downloads Nstance's public CA certificate with a bounded read.
+func (s *gcsSeedStore) PublicCA(ctx context.Context, b *nstanceBootstrapModel) ([]byte, error) {
+	r, err := s.client.Bucket(b.CABucket.ValueString()).Object(path.Join(strings.Trim(b.CAPrefix.ValueString(), "/"), "ca.crt")).NewReader(ctx)
+	if errors.Is(err, storage.ErrObjectNotExist) {
+		return nil, errSnapshotAbsent
+	}
+	if err != nil {
+		return nil, errors.New("cannot read Nstance public CA from GCS")
+	}
+	defer func() { _ = r.Close() }()
+	return readPublicCA(r)
+}
+
+// Upload creates the snapshot and completion marker without overwriting an object.
+func (s *gcsSeedStore) Upload(ctx context.Context, snapshot []byte, completion string) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	obj := s.client.Bucket(s.opts.Bucket).Object(s.opts.objectKey()).If(storage.Conditions{DoesNotExist: true})
+	w := obj.NewWriter(ctx)
+	w.Metadata = map[string]string{seedCompletionMetadata: completion}
+	if _, err := io.Copy(w, bytes.NewReader(snapshot)); err != nil {
+		cancel()
+		_ = w.Close()
+		return errors.New("GCS create-only seed upload failed")
+	}
+	if err := w.Close(); err != nil {
+		return errors.New("GCS create-only seed upload failed")
+	}
+	return nil
 }
 
 // newGCSClient returns a GCS client using Application Default Credentials.

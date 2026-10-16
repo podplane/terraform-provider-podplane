@@ -5,62 +5,74 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"os"
+	"path"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/smithy-go"
 )
 
-// uploadSnapshotS3 uploads the snapshot to S3 only when the bucket is empty and
-// the object key does not exist.
-func uploadSnapshotS3(ctx context.Context, opts SeedOptions, path string) error {
-	if opts.Bucket == "" {
-		return fmt.Errorf("bucket is required")
-	}
-	key := opts.objectKey()
-	client, err := newS3Client(ctx, opts)
-	if err != nil {
-		return err
-	}
-	if err := requireEmptyS3Prefix(ctx, client, opts.Bucket, opts.objectPrefix()); err != nil {
-		return err
-	}
-	file, err := os.Open(path)
-	if err != nil {
-		return fmt.Errorf("open Netsy snapshot %s: %w", path, err)
-	}
-	defer func() { _ = file.Close() }()
-	_, err = client.PutObject(ctx, &s3.PutObjectInput{
-		Bucket:      aws.String(opts.Bucket),
-		Key:         aws.String(key),
-		Body:        file,
-		IfNoneMatch: aws.String("*"),
-	})
-	if err != nil {
-		var apiErr smithy.APIError
-		if errors.As(err, &apiErr) && apiErr.ErrorCode() == "PreconditionFailed" {
-			return fmt.Errorf("S3 object s3://%s/%s already exists; refusing to overwrite Netsy state", opts.Bucket, key)
-		}
-		return fmt.Errorf("upload Netsy snapshot to s3://%s/%s: %w", opts.Bucket, key, err)
-	}
-	return nil
+// s3SeedStore manages create-only Netsy snapshots and public CA reads in S3.
+type s3SeedStore struct {
+	client *s3.Client
+	opts   SeedOptions
 }
 
-// checkSnapshotTargetS3 checks that the target S3 prefix has no existing objects.
-func checkSnapshotTargetS3(ctx context.Context, opts SeedOptions) error {
-	if opts.Bucket == "" {
-		return fmt.Errorf("bucket is required")
-	}
-	client, err := newS3Client(ctx, opts)
+// Metadata reads the snapshot version, completion marker, and encryption status.
+func (s *s3SeedStore) Metadata(ctx context.Context) (seedSnapshotMetadata, error) {
+	out, err := s.client.HeadObject(ctx, &s3.HeadObjectInput{Bucket: aws.String(s.opts.Bucket), Key: aws.String(s.opts.objectKey())})
 	if err != nil {
-		return err
+		var api smithy.APIError
+		if errors.As(err, &api) && (api.ErrorCode() == "NotFound" || api.ErrorCode() == "NoSuchKey") {
+			return seedSnapshotMetadata{}, errSnapshotAbsent
+		}
+		return seedSnapshotMetadata{}, errors.New("cannot read S3 seed metadata")
 	}
-	return requireEmptyS3Prefix(ctx, client, opts.Bucket, opts.objectPrefix())
+	version := aws.ToString(out.VersionId)
+	if version == "" {
+		version = aws.ToString(out.ETag)
+	}
+	return seedSnapshotMetadata{Version: version, Completion: out.Metadata[seedCompletionMetadata], Encrypted: out.ServerSideEncryption != ""}, nil
+}
+
+// RequireEmpty rejects a seed prefix that already contains objects.
+func (s *s3SeedStore) RequireEmpty(ctx context.Context) error {
+	return requireEmptyS3Prefix(ctx, s.client, s.opts.Bucket, s.opts.objectPrefix())
+}
+
+// PublicCA downloads Nstance's public CA certificate with a bounded read.
+func (s *s3SeedStore) PublicCA(ctx context.Context, b *nstanceBootstrapModel) ([]byte, error) {
+	out, err := s.client.GetObject(ctx, &s3.GetObjectInput{Bucket: aws.String(b.CABucket.ValueString()), Key: aws.String(path.Join(strings.Trim(b.CAPrefix.ValueString(), "/"), "ca.crt"))})
+	if err != nil {
+		var api smithy.APIError
+		if errors.As(err, &api) && api.ErrorCode() == "NoSuchKey" {
+			return nil, errSnapshotAbsent
+		}
+		return nil, errors.New("cannot read Nstance public CA from S3")
+	}
+	defer func() { _ = out.Body.Close() }()
+	return readPublicCA(out.Body)
+}
+
+// Upload creates an encrypted snapshot and completion marker without overwriting an object.
+func (s *s3SeedStore) Upload(ctx context.Context, snapshot []byte, completion string) error {
+	_, err := s.client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket: aws.String(s.opts.Bucket), Key: aws.String(s.opts.objectKey()), Body: bytes.NewReader(snapshot),
+		IfNoneMatch: aws.String("*"), ServerSideEncryption: types.ServerSideEncryptionAes256,
+		Metadata: map[string]string{seedCompletionMetadata: completion},
+	})
+	// Do not propagate payload-bearing backend errors into diagnostics.
+	if err != nil {
+		return errors.New("S3 create-only seed upload failed")
+	}
+	return nil
 }
 
 // newS3Client returns an S3 client using the standard AWS SDK credential chain.

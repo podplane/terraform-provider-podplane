@@ -26,9 +26,9 @@ import (
 )
 
 const (
-	cloudSecretProviderAWSSecretsManager = "aws_secrets_manager"
-	cloudSecretProviderAWSSSM            = "aws_ssm"
-	cloudSecretProviderGCPSecretManager  = "gcp_secret_manager"
+	cloudSecretProviderAWSSecretsManager = "aws-secrets-manager"
+	cloudSecretProviderAWSSSM            = "aws-parameter-store"
+	cloudSecretProviderGCPSecretManager  = "google-secret-manager"
 )
 
 // cloudSecretOptions identifies a secret in a supported durable backend.
@@ -66,6 +66,37 @@ type cloudSecretStore interface {
 	CreateOrAdopt(context.Context, []byte) (cloudSecretMetadata, []byte, error)
 	Metadata(context.Context) (cloudSecretMetadata, error)
 	Close() error
+}
+
+// cloudSecretValue reads only a pinned immutable version during seed Create.
+// Errors deliberately omit backend responses, which can contain secret payloads.
+func cloudSecretValue(ctx context.Context, store cloudSecretStore, version string) ([]byte, error) {
+	switch s := store.(type) {
+	case *awsSecretsStore:
+		out, err := s.client.GetSecretValue(ctx, &awssecrets.GetSecretValueInput{SecretId: aws.String(s.name), VersionId: aws.String(version)})
+		if err == nil && out != nil && aws.ToString(out.VersionId) == version {
+			if out.SecretString != nil {
+				return []byte(*out.SecretString), nil
+			}
+			if len(out.SecretBinary) > 0 {
+				return out.SecretBinary, nil
+			}
+		}
+	case *awsSSMStore:
+		out, err := s.client.GetParameter(ctx, &ssm.GetParameterInput{Name: aws.String(s.name + ":" + version), WithDecryption: aws.Bool(true)})
+		if err == nil && out != nil && out.Parameter != nil && out.Parameter.Type == ssmtypes.ParameterTypeSecureString && strconv.FormatInt(out.Parameter.Version, 10) == version && out.Parameter.Value != nil {
+			return []byte(*out.Parameter.Value), nil
+		}
+	case *gcpSecretStore:
+		if !strings.HasPrefix(version, s.name+"/versions/") || strings.HasSuffix(version, "/latest") {
+			break
+		}
+		out, err := s.client.AccessSecretVersion(ctx, &secretmanagerpb.AccessSecretVersionRequest{Name: version})
+		if err == nil && out != nil && out.Name == version && out.Payload != nil && len(out.Payload.Data) > 0 {
+			return out.Payload.Data, nil
+		}
+	}
+	return nil, errors.New("cannot read the pinned signing-key version; check secret backend permissions and restore the original version")
 }
 
 // newCloudSecretStore configures the selected secret backend.

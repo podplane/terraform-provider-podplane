@@ -21,15 +21,17 @@ type netsySeedS3Resource struct{}
 
 // netsySeedS3Model maps S3 seed arguments and results to Terraform state.
 type netsySeedS3Model struct {
-	ID                types.String `tfsdk:"id"`
-	ClusterConfigPath types.String `tfsdk:"cluster_config_path"`
-	SeedPath          types.String `tfsdk:"seed_path"`
-	ValuesFile        types.String `tfsdk:"values_file"`
-	ValuesContent     types.String `tfsdk:"values_content"`
-	Bucket            types.String `tfsdk:"bucket"`
-	Prefix            types.String `tfsdk:"prefix"`
-	Region            types.String `tfsdk:"region"`
-	Profile           types.String `tfsdk:"profile"`
+	ID                types.String           `tfsdk:"id"`
+	ObjectVersion     types.String           `tfsdk:"object_version"`
+	NstanceBootstrap  *nstanceBootstrapModel `tfsdk:"nstance_bootstrap"`
+	ClusterConfigPath types.String           `tfsdk:"cluster_config_path"`
+	SeedPath          types.String           `tfsdk:"seed_path"`
+	ValuesFile        types.String           `tfsdk:"values_file"`
+	ValuesContent     types.String           `tfsdk:"values_content"`
+	Bucket            types.String           `tfsdk:"bucket"`
+	Prefix            types.String           `tfsdk:"prefix"`
+	Region            types.String           `tfsdk:"region"`
+	Profile           types.String           `tfsdk:"profile"`
 }
 
 // NewNetsySeedS3Resource returns the S3 Netsy seed resource implementation.
@@ -46,7 +48,9 @@ func (r *netsySeedS3Resource) Metadata(ctx context.Context, req resource.Metadat
 func (r *netsySeedS3Resource) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = resourceschema.Schema{
 		Attributes: map[string]resourceschema.Attribute{
-			"id": resourceschema.StringAttribute{Computed: true},
+			"id":                resourceschema.StringAttribute{Computed: true},
+			"object_version":    resourceschema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
+			"nstance_bootstrap": nstanceBootstrapAttribute(),
 			"cluster_config_path": resourceschema.StringAttribute{
 				Required: true,
 				PlanModifiers: []planmodifier.String{
@@ -117,48 +121,40 @@ func (r *netsySeedS3Resource) Create(ctx context.Context, req resource.CreateReq
 		return
 	}
 	opts := seedOptionsFromS3Model(plan)
-	doSeed, err := shouldSeed(opts)
+	client, err := newS3Client(ctx, opts)
 	if err != nil {
-		resp.Diagnostics.AddError("Read Netsy seed config", err.Error())
+		resp.Diagnostics.AddError("Configure Netsy seed storage", err.Error())
 		return
 	}
-	if doSeed {
-		if err := checkSnapshotTargetS3(ctx, opts); err != nil {
-			resp.Diagnostics.AddError("Check Netsy seed target", err.Error())
-			return
-		}
-		seedPath, cleanup, err := resolveSeedPath(ctx, opts)
-		if cleanup != nil {
-			defer cleanup()
-		}
-		if err != nil {
-			resp.Diagnostics.AddError("Resolve Netsy seed", err.Error())
-			return
-		}
-		path, snapshotCleanup, err := generateNetsySeedSnapshot(ctx, opts, seedPath)
-		if snapshotCleanup != nil {
-			defer snapshotCleanup()
-		}
-		if err != nil {
-			resp.Diagnostics.AddError("Generate Netsy snapshot", err.Error())
-			return
-		}
-		if err := uploadSnapshotS3(ctx, opts, path); err != nil {
-			resp.Diagnostics.AddError("Upload Netsy snapshot to S3", err.Error())
-			return
-		}
+	meta, err := createSeed(ctx, opts, &s3SeedStore{client: client, opts: opts}, newCloudSecretStore)
+	if err != nil {
+		resp.Diagnostics.AddError("Create or adopt Netsy seed", err.Error())
+		return
 	}
+	plan.ObjectVersion = types.StringValue(meta.Version)
 	plan.ID = types.StringValue("s3://" + opts.Bucket + "/" + opts.objectKey())
 	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
-// Read keeps the stored seed resource state.
+// Read inspects only object metadata, never the signing key or snapshot payload.
 func (r *netsySeedS3Resource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	var state netsySeedS3Model
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	opts := seedOptionsFromS3Model(state)
+	client, err := newS3Client(ctx, opts)
+	if err != nil {
+		resp.Diagnostics.AddError("Read Netsy seed metadata", err.Error())
+		return
+	}
+	meta, err := (&s3SeedStore{client: client, opts: opts}).Metadata(ctx)
+	if err != nil || meta.Version != state.ObjectVersion.ValueString() || state.NstanceBootstrap != nil && (meta.Completion != seedCompletion(opts) || !meta.Encrypted) {
+		resp.Diagnostics.AddError("Netsy seed loss detected", "Cannot verify the original bootstrap object version. Do not re-upload a seed to an initialized cluster.")
+		return
+	}
+	state.ObjectVersion = types.StringValue(meta.Version)
 	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }
 
@@ -182,6 +178,7 @@ func (r *netsySeedS3Resource) Delete(ctx context.Context, req resource.DeleteReq
 // seedOptionsFromS3Model converts Terraform S3 resource state to seed options.
 func seedOptionsFromS3Model(model netsySeedS3Model) SeedOptions {
 	return SeedOptions{
+		NstanceBootstrap:  model.NstanceBootstrap,
 		ClusterConfigPath: stringOr(model.ClusterConfigPath, ""),
 		SeedPath:          stringOr(model.SeedPath, ""),
 		ValuesFile:        stringOr(model.ValuesFile, ""),

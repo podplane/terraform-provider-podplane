@@ -40,7 +40,7 @@ func (workloadCAProviderValidator) ValidateString(ctx context.Context, req valid
 	switch req.ConfigValue.ValueString() {
 	case cloudSecretProviderAWSSecretsManager, cloudSecretProviderAWSSSM, cloudSecretProviderGCPSecretManager:
 	default:
-		resp.Diagnostics.AddAttributeError(req.Path, "Invalid workload CA key provider", "provider must be one of aws_secrets_manager, aws_ssm, or gcp_secret_manager")
+		resp.Diagnostics.AddAttributeError(req.Path, "Invalid workload CA key provider", "provider must be one of aws-secrets-manager, aws-parameter-store, or google-secret-manager")
 	}
 }
 
@@ -50,7 +50,7 @@ type workloadCAKeyResource struct{}
 // workloadCAKeyModel maps workload CA key arguments and metadata to Terraform state.
 type workloadCAKeyModel struct {
 	ID                   types.String `tfsdk:"id"`
-	Provider             types.String `tfsdk:"provider"`
+	Provider             types.String `tfsdk:"secrets_provider"`
 	KeyPrefix            types.String `tfsdk:"key_prefix"`
 	Region               types.String `tfsdk:"region"`
 	Profile              types.String `tfsdk:"profile"`
@@ -75,7 +75,7 @@ func (r *workloadCAKeyResource) Schema(ctx context.Context, req resource.SchemaR
 		Description: "Creates or adopts the dedicated Podplane workload CA key without storing private key bytes in Terraform state. The backend value is retained on destroy.",
 		Attributes: map[string]resourceschema.Attribute{
 			"id":                     resourceschema.StringAttribute{Computed: true},
-			"provider":               resourceschema.StringAttribute{Required: true, Validators: []validator.String{workloadCAProviderValidator{}}, PlanModifiers: replace},
+			"secrets_provider":       resourceschema.StringAttribute{Required: true, Validators: []validator.String{workloadCAProviderValidator{}}, PlanModifiers: replace},
 			"key_prefix":             resourceschema.StringAttribute{Required: true, PlanModifiers: replace},
 			"region":                 resourceschema.StringAttribute{Optional: true, PlanModifiers: replace},
 			"profile":                resourceschema.StringAttribute{Optional: true, PlanModifiers: replace},
@@ -103,7 +103,7 @@ func (r *workloadCAKeyResource) ValidateConfig(ctx context.Context, req resource
 		resp.Diagnostics.AddError("Invalid workload CA key configuration", "region and profile are only valid for AWS providers")
 	}
 	if opts.Provider != cloudSecretProviderGCPSecretManager && opts.Project != "" {
-		resp.Diagnostics.AddError("Invalid workload CA key configuration", "project is only valid for gcp_secret_manager")
+		resp.Diagnostics.AddError("Invalid workload CA key configuration", "project is only valid for google-secret-manager")
 	}
 }
 

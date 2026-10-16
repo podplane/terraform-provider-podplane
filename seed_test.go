@@ -5,13 +5,22 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha512"
 	"encoding/hex"
+	"fmt"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/hashicorp/terraform-plugin-framework/path"
+	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
+	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/netsy-dev/netsy/pkg/datafile"
 )
 
 // TestSeedOptionsObjectKey verifies bootstrap.netsy is always used under the
@@ -36,35 +45,81 @@ func TestSeedOptionsObjectKey(t *testing.T) {
 	}
 }
 
-// TestShouldSeed verifies seed generation is skipped only when the cluster seed
-// is omitted or explicitly none.
-func TestShouldSeed(t *testing.T) {
-	tests := []struct {
-		name     string
-		seedJSON string
-		opts     SeedOptions
-		want     bool
-	}{
-		{name: "explicit seed path", opts: SeedOptions{SeedPath: "/tmp/custom.netsy"}, want: true},
-		{name: "omitted seed", seedJSON: ``, want: false},
-		{name: "empty seed", seedJSON: `"seed": {}`, want: false},
-		{name: "none seed", seedJSON: `"seed": {"name":"none"}`, want: false},
-		{name: "recommended seed", seedJSON: `"seed": {"name":"recommended","version":"v1.0.0","digest":"sha512:00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"}`, want: true},
+// TestSeedResourceRequiresSnapshot verifies seed resources reject missing seeds and retain real snapshots across retries.
+func TestSeedResourceRequiresSnapshot(t *testing.T) {
+	var seed bytes.Buffer
+	key := "/registry/helm.toolkit.fluxcd.io/helmreleases/platform-components/platform-components"
+	if err := datafile.WriteSnapshot(&seed, []*datafile.Record{{Revision: 1, CreateRevision: 1, Version: 1, Created: true, Key: []byte(key), Value: []byte(`{"apiVersion":"helm.toolkit.fluxcd.io/v2","kind":"HelmRelease","metadata":{"name":"platform-components","namespace":"platform-components"},"spec":{"values":{}}}`)}}, "generic"); err != nil {
+		t.Fatal(err)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			opts := tt.opts
-			if opts.SeedPath == "" {
-				opts.ClusterConfigPath = writeClusterConfig(t, tt.seedJSON)
-			}
-			got, err := shouldSeed(opts)
-			if err != nil {
-				t.Fatalf("shouldSeed() error = %v", err)
-			}
-			if got != tt.want {
-				t.Fatalf("shouldSeed() = %v, want %v", got, tt.want)
-			}
-		})
+	sum := sha512.Sum512(seed.Bytes())
+	for _, provider := range []string{"s3", "gcs"} {
+		for _, tc := range []struct{ name, config string }{
+			{"omitted", ""},
+			{"empty", `"seed": {}`},
+			{"none", `"seed": {"name":"none"}`},
+			{"minimal", fmt.Sprintf(`"seed":{"name":"minimal","version":"v1.0.0","digest":"sha512:%s"}`, hex.EncodeToString(sum[:]))},
+		} {
+			t.Run(provider+"/"+tc.name, func(t *testing.T) {
+				configPath := writeClusterConfig(t, tc.config)
+				seedPath := ""
+				if tc.name == "minimal" {
+					seedPath = filepath.Join(t.TempDir(), "minimal.netsy")
+					if err := os.WriteFile(seedPath, seed.Bytes(), 0600); err != nil {
+						t.Fatal(err)
+					}
+				}
+				cloud := &snapshotCloud{provider: provider}
+				server := httptest.NewServer(cloud)
+				defer server.Close()
+				t.Setenv("AWS_ENDPOINT_URL_S3", server.URL)
+				t.Setenv("AWS_ACCESS_KEY_ID", "fake-key")
+				t.Setenv("AWS_SECRET_ACCESS_KEY", "fake-secret")
+				t.Setenv("AWS_SESSION_TOKEN", "")
+				t.Setenv("STORAGE_EMULATOR_HOST", server.URL)
+				var r resource.Resource = &netsySeedS3Resource{}
+				var model any = netsySeedS3Model{ClusterConfigPath: types.StringValue(configPath), SeedPath: types.StringValue(seedPath), Bucket: types.StringValue("seed-bucket"), Prefix: types.StringValue("netsy"), Region: types.StringValue("us-east-1")}
+				wantVersion := `"seed-etag"`
+				if provider == "gcs" {
+					r = &netsySeedGCSResource{}
+					model = netsySeedGCSModel{ClusterConfigPath: types.StringValue(configPath), SeedPath: types.StringValue(seedPath), Bucket: types.StringValue("seed-bucket"), Prefix: types.StringValue("netsy")}
+					wantVersion = "9"
+				}
+				plan := tfsdk.Plan{Schema: resourceSchema(t, r)}
+				if d := plan.Set(context.Background(), model); d.HasError() {
+					t.Fatal(d)
+				}
+				created := resource.CreateResponse{State: tfsdk.State{Schema: plan.Schema}}
+				r.Create(context.Background(), resource.CreateRequest{Plan: plan}, &created)
+				if tc.name != "minimal" {
+					if !created.Diagnostics.HasError() || !strings.Contains(created.Diagnostics[0].Detail(), "seed path is required") || cloud.payload != nil {
+						t.Fatalf("missing seed must fail without uploading: %v", created.Diagnostics)
+					}
+					return
+				}
+				if created.Diagnostics.HasError() {
+					t.Fatal(created.Diagnostics)
+				}
+				var version string
+				if d := created.State.GetAttribute(context.Background(), path.Root("object_version"), &version); d.HasError() || version != wantVersion {
+					t.Fatalf("object version = %q, want %q: %v", version, wantVersion, d)
+				}
+				records, err := datafile.ReadSnapshot(bytes.NewReader(cloud.payload))
+				if err != nil || len(records) != 1 || string(records[0].Key) != key {
+					t.Fatalf("invalid uploaded snapshot: %v", err)
+				}
+				for _, file := range []string{configPath, seedPath} {
+					if err := os.Remove(file); err != nil {
+						t.Fatal(err)
+					}
+				}
+				retry := resource.CreateResponse{State: tfsdk.State{Schema: plan.Schema}}
+				r.Create(context.Background(), resource.CreateRequest{Plan: plan}, &retry)
+				if retry.Diagnostics.HasError() || !retry.State.Raw.Equal(created.State.Raw) {
+					t.Fatalf("snapshot recovery failed: %v", retry.Diagnostics)
+				}
+			})
+		}
 	}
 }
 

@@ -53,5 +53,6 @@ func (p *podplaneProvider) Resources(ctx context.Context) []func() resource.Reso
 		NewNetsySeedS3Resource,
 		NewNetsySeedGCSResource,
 		NewWorkloadCAKeyResource,
+		NewNstanceRegistrationKeyResource,
 	}
 }

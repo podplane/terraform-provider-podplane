@@ -8,9 +8,28 @@ import (
 	"context"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	resourceschema "github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
 )
+
+// TestProviderProtocolSchema verifies Terraform can actually load every resource.
+func TestProviderProtocolSchema(t *testing.T) {
+	server := providerserver.NewProtocol6(NewProvider())()
+	resp, err := server.GetProviderSchema(context.Background(), &tfprotov6.GetProviderSchemaRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range resp.Diagnostics {
+		if d.Severity == tfprotov6.DiagnosticSeverityError {
+			t.Fatalf("provider schema rejected: %s: %s", d.Summary, d.Detail)
+		}
+	}
+	if _, ok := resp.ResourceSchemas["podplane_nstance_registration_key"]; !ok {
+		t.Fatal("missing registration signer resource")
+	}
+}
 
 // TestNetsySeedS3Schema verifies the S3 resource exposes prefix, not key.
 func TestNetsySeedS3Schema(t *testing.T) {

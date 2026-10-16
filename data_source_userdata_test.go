@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	datasourceschema "github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -33,7 +34,7 @@ const testUserdataManifest = `{
 
 // TestRenderUserdata verifies provider inputs produce canonical userdata.
 func TestRenderUserdata(t *testing.T) {
-	content, err := renderUserdata(userdataModel{
+	content, err := renderUserdata(context.Background(), userdataModel{
 		ManifestJSON:               types.StringValue(testUserdataManifest),
 		DepsMirrorURL:              types.StringValue("https://deps.podplane.dev"),
 		ProviderKind:               types.StringValue("aws"),
@@ -65,12 +66,44 @@ func TestRenderUserdata(t *testing.T) {
 // TestRenderUserdataRejectsInvalidManifest verifies invalid manifests surface
 // a rendering error.
 func TestRenderUserdataRejectsInvalidManifest(t *testing.T) {
-	_, err := renderUserdata(userdataModel{
+	_, err := renderUserdata(context.Background(), userdataModel{
 		ManifestJSON: types.StringValue("{"),
 		ProviderKind: types.StringValue("aws"),
 	})
 	if err == nil {
 		t.Fatal("expected invalid manifest error")
+	}
+}
+
+// TestRenderServerUserdata verifies NST inputs produce a finished cloud-init script.
+func TestRenderServerUserdata(t *testing.T) {
+	for _, provider := range []string{"aws", "google"} {
+		for _, ssm := range []bool{false, true} {
+			content, err := renderUserdata(context.Background(), userdataModel{
+				ManifestJSON: types.StringValue(strings.Replace(testUserdataManifest, `"knc"`, `"nst"`, 1)),
+				ProviderKind: types.StringValue(provider),
+				EnableSSM:    types.BoolValue(ssm),
+				ServerEnv: types.MapValueMust(types.StringType, map[string]attr.Value{
+					"NSTANCE_SERVER_SHARD":  types.StringValue("zone-b"),
+					"NSTANCE_SERVER_BUCKET": types.StringValue("cluster-state"),
+					"REGISTRY_HOSTNAME":     types.StringValue("registry.example.com"),
+				}),
+			})
+			if err != nil {
+				t.Fatalf("%s ssm=%t: %v", provider, ssm, err)
+			}
+			for _, want := range []string{"NSTANCE_SERVER_SHARD='zone-b'", "NSTANCE_SERVER_BUCKET='cluster-state'", "REGISTRY_HOSTNAME='registry.example.com'", "${ARTIFACTS_DIR}"} {
+				if !strings.Contains(content, want) {
+					t.Fatalf("%s ssm=%t: missing %q", provider, ssm, want)
+				}
+			}
+			if strings.Contains(content, "amazon-ssm-agent") != (provider == "aws" && ssm) {
+				t.Fatalf("%s ssm=%t: incorrect SSM bootstrap", provider, ssm)
+			}
+			if strings.Contains(content, "%{") || strings.Contains(content, "$${") || strings.Contains(content, "{{") {
+				t.Fatalf("%s ssm=%t: userdata still requires interpolation", provider, ssm)
+			}
+		}
 	}
 }
 
@@ -90,6 +123,7 @@ func TestUserdataDataSourceSchema(t *testing.T) {
 		"google_project_id",
 		"immutable_ssh_authorized_keys",
 		"enable_ssm",
+		"server_env",
 		"content",
 	} {
 		if _, ok := resp.Schema.Attributes[name]; !ok {

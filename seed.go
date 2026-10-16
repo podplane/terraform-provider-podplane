@@ -5,6 +5,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -31,6 +32,7 @@ type SeedOptions struct {
 	Region            string
 	Profile           string
 	Project           string
+	NstanceBootstrap  *nstanceBootstrapModel
 }
 
 // objectKey returns the Netsy bootstrap object key under the configured prefix.
@@ -41,18 +43,6 @@ func (opts SeedOptions) objectKey() string {
 // objectPrefix returns the normalized object prefix used for Netsy state checks.
 func (opts SeedOptions) objectPrefix() string {
 	return strings.Trim(opts.Prefix, "/")
-}
-
-// shouldSeed reports whether this resource should generate and upload a seed.
-func shouldSeed(opts SeedOptions) (bool, error) {
-	if opts.SeedPath != "" {
-		return true, nil
-	}
-	seed, err := seeds.ReadClusterSeed(opts.ClusterConfigPath)
-	if err != nil {
-		return false, err
-	}
-	return seed.Name != seeds.None, nil
 }
 
 // resolveSeedPath returns the explicit or downloaded Podplane seed file path.
@@ -131,30 +121,18 @@ func resolveExplicitSeedPath(ctx context.Context, source, digest string) (seedPa
 	return tmpPath, cleanup, nil
 }
 
-// generateNetsySeedSnapshot generates a temporary Netsy snapshot file from an
-// already-resolved seed file path.
-func generateNetsySeedSnapshot(ctx context.Context, opts SeedOptions, seedPath string) (path string, cleanup func(), err error) {
-	tmp, err := os.CreateTemp("", "podplane-netsy-*.netsy")
-	if err != nil {
-		return "", nil, fmt.Errorf("create temporary snapshot: %w", err)
-	}
-	tmpPath := tmp.Name()
-	cleanup = func() {
-		_ = os.Remove(tmpPath)
-	}
-	if err := netsyseed.WriteSnapshot(tmp, netsyseed.SnapshotOptions{
+// generateNetsySeedSnapshot keeps cluster-specific snapshots in memory.
+func generateNetsySeedSnapshot(ctx context.Context, opts SeedOptions, seedPath string) ([]byte, error) {
+	var snapshot bytes.Buffer
+	if err := netsyseed.WriteSnapshot(&snapshot, netsyseed.SnapshotOptions{
 		Context:           ctx,
 		ClusterConfigPath: opts.ClusterConfigPath,
 		SeedPath:          seedPath,
 		ValuesContent:     []byte(opts.ValuesContent),
 		ValuesFile:        opts.ValuesFile,
 	}); err != nil {
-		cleanup()
-		return "", nil, err
+		clear(snapshot.Bytes())
+		return nil, err
 	}
-	if err := tmp.Close(); err != nil {
-		cleanup()
-		return "", nil, err
-	}
-	return tmpPath, cleanup, nil
+	return snapshot.Bytes(), nil
 }

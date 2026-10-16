@@ -43,7 +43,7 @@ func workloadCAKeySecret(opts workloadCAKeyOptions) (cloudSecretOptions, error) 
 		return cloudSecretOptions{Provider: opts.Provider, Name: "/" + prefix + "/" + workloadCAKeyName, Region: opts.Region, Profile: opts.Profile}, nil
 	case cloudSecretProviderGCPSecretManager:
 		if opts.Project == "" {
-			return cloudSecretOptions{}, fmt.Errorf("project is required for gcp_secret_manager")
+			return cloudSecretOptions{}, fmt.Errorf("project is required for google-secret-manager")
 		}
 		if strings.Contains(prefix, "/") {
 			return cloudSecretOptions{}, fmt.Errorf("GCP key_prefix must not contain a slash")
@@ -61,7 +61,7 @@ func workloadCAKeySecret(opts workloadCAKeyOptions) (cloudSecretOptions, error) 
 			GCPLabels: map[string]string{workloadCAOwnershipLabel: "true"},
 		}, nil
 	default:
-		return cloudSecretOptions{}, fmt.Errorf("provider must be one of aws_secrets_manager, aws_ssm, or gcp_secret_manager")
+		return cloudSecretOptions{}, fmt.Errorf("provider must be one of aws-secrets-manager, aws-parameter-store, or google-secret-manager")
 	}
 }
 
@@ -96,6 +96,7 @@ func workloadCAKeyFingerprint(value []byte) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("PKCS#8 private key is not Ed25519")
 	}
+	defer clear(key)
 	publicDER, err := x509.MarshalPKIXPublicKey(key.Public())
 	if err != nil {
 		return "", fmt.Errorf("marshal public key: %w", err)

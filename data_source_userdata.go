@@ -28,6 +28,7 @@ type userdataModel struct {
 	GoogleProjectID            types.String `tfsdk:"google_project_id"`
 	ImmutableSSHAuthorizedKeys types.String `tfsdk:"immutable_ssh_authorized_keys"`
 	EnableSSM                  types.Bool   `tfsdk:"enable_ssm"`
+	ServerEnv                  types.Map    `tfsdk:"server_env"`
 	Content                    types.String `tfsdk:"content"`
 }
 
@@ -73,6 +74,11 @@ func (d *userdataDataSource) Schema(ctx context.Context, req datasource.SchemaRe
 				Optional:    true,
 				Description: "Whether AWS Systems Manager Session Manager bootstrap is included. Defaults to true.",
 			},
+			"server_env": datasourceschema.MapAttribute{
+				Optional:    true,
+				ElementType: types.StringType,
+				Description: "Non-secret NST settings provisioned once in mutable.env. Changes require replacing the VM. Only supported for nst manifests.",
+			},
 			"content": datasourceschema.StringAttribute{
 				Computed:    true,
 				Description: "Rendered Podplane VM userdata script.",
@@ -88,7 +94,7 @@ func (d *userdataDataSource) Read(ctx context.Context, req datasource.ReadReques
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	content, err := renderUserdata(config)
+	content, err := renderUserdata(ctx, config)
 	if err != nil {
 		resp.Diagnostics.AddError("Render Podplane userdata", err.Error())
 		return
@@ -98,12 +104,18 @@ func (d *userdataDataSource) Read(ctx context.Context, req datasource.ReadReques
 }
 
 // renderUserdata converts Terraform values into canonical renderer inputs.
-func renderUserdata(config userdataModel) (string, error) {
+func renderUserdata(ctx context.Context, config userdataModel) (string, error) {
 	if config.ManifestJSON.IsNull() || config.ManifestJSON.IsUnknown() {
 		return "", fmt.Errorf("manifest_json must be known")
 	}
 	if config.ProviderKind.IsNull() || config.ProviderKind.IsUnknown() {
 		return "", fmt.Errorf("provider_kind must be known")
+	}
+	var serverEnv map[string]string
+	if !config.ServerEnv.IsNull() {
+		if diags := config.ServerEnv.ElementsAs(ctx, &serverEnv, false); diags.HasError() {
+			return "", fmt.Errorf("decode server_env: %v", diags)
+		}
 	}
 	return userdata.Render([]byte(config.ManifestJSON.ValueString()), userdata.Options{
 		DepsMirrorURL:              stringOr(config.DepsMirrorURL, ""),
@@ -112,6 +124,7 @@ func renderUserdata(config userdataModel) (string, error) {
 		GoogleProjectID:            stringOr(config.GoogleProjectID, ""),
 		ImmutableSSHAuthorizedKeys: stringOr(config.ImmutableSSHAuthorizedKeys, ""),
 		EnableSSM:                  boolOr(config.EnableSSM, true),
+		ServerEnv:                  serverEnv,
 	})
 }
 
