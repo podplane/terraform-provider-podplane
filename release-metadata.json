@@ -1,6 +1,6 @@
 {
   "source_repository": "podplane/podplane",
-  "source_tag": "v0.17.0",
-  "source_commit": "aa7edaf2053d267d3360999df2e660a6697dc3df",
-  "provider_version": "1.117.0"
+  "source_tag": "v0.18.0",
+  "source_commit": "3d647b17cb30d83b55ba7630426f81de491ca2c1",
+  "provider_version": "1.118.0"
 }
